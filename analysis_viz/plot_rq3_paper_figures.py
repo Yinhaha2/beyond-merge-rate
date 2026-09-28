@@ -95,7 +95,6 @@ def plot_failure() -> None:
     ax.set_xticks([0, 10, 20, 30, 40, 50])
     ax.set_xticklabels(["0%", "10%", "20%", "30%", "40%", "50%"])
     ax.set_xlabel("Share of reviewed failures")
-    ax.set_title(rf"Reviewed failures  ($n = {reviewed_n}$)", loc="center", fontsize=11, pad=8, color="#222")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
@@ -132,7 +131,6 @@ def plot_aux() -> None:
     ax.set_xticklabels(names)
     ax.set_ylim(0, 96)
     ax.set_ylabel("Terminal merge rate (%)")
-    ax.set_title("Capability boundary", loc="left", fontsize=10.5, pad=6, color="#222")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -154,7 +152,6 @@ def plot_aux() -> None:
     ax2.set_xticks([0, 25, 50, 75, 100])
     ax2.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax2.set_xlabel(f"Share of in-PR repairs  (n = {sum(int(v) for v in modes.values())})")
-    ax2.set_title("Who repaired in the same PR", loc="left", fontsize=10.5, pad=2, color="#222")
     ax2.spines["top"].set_visible(False)
     ax2.spines["left"].set_visible(False)
     ax2.spines["right"].set_visible(False)

@@ -154,8 +154,12 @@ def plot_sankey() -> None:
     l_bot, l_top = centered(c_bot, m_top, n_term)
 
     fig, ax = plt.subplots(figsize=(10.6, 5.8))
-    x0, x1, x2 = 0.0, 280.0, 590.0
-    w = 150.0
+    # Bars are 20% narrower than the previous 150-unit width.
+    # Connector spans were 130 and 160; shrink those ribbons by the same 20%.
+    w = 120.0
+    x0 = 0.0
+    x1 = x0 + w + 104.0
+    x2 = x1 + w + 128.0
 
     flow(ax, x0 + w, x1, l_top, l_top - n_merged, m_top, m_bot, C_MERGED, 0.40)
     flow(ax, x0 + w, x1, l_top - n_merged, l_bot, c_top, c_bot, C_CLOSED, 0.40)
@@ -174,17 +178,22 @@ def plot_sankey() -> None:
         flow(ax, x1 + w, x2, c_cursor, c_cursor - val, top, bot, col, 0.50)
         c_cursor -= val
 
+    # y offsets are in PR-count units; ~70 units is one line at this scale.
+    dy = 72
     rect(ax, x0, l_bot, w, n_term, C_ALL)
-    ax.text(x0 + w / 2, (l_bot + l_top) / 2 + 16, "Terminal PRs", ha="center", va="center", color="white", fontsize=9.2, zorder=4)
-    ax.text(x0 + w / 2, (l_bot + l_top) / 2 - 16, f"n = {n_term:,}", ha="center", va="center", color="white", fontsize=8.2, zorder=4)
+    ax.text(x0 + w / 2, (l_bot + l_top) / 2 + dy, "Terminal", ha="center", va="center", color="white", fontsize=11.0, zorder=4)
+    ax.text(x0 + w / 2, (l_bot + l_top) / 2, "PRs", ha="center", va="center", color="white", fontsize=11.0, zorder=4)
+    ax.text(x0 + w / 2, (l_bot + l_top) / 2 - dy, f"n = {n_term:,}", ha="center", va="center", color="white", fontsize=9.8, zorder=4)
 
     rect(ax, x1, m_bot, w, n_merged, C_MERGED)
-    ax.text(x1 + w / 2, (m_bot + m_top) / 2 + 16, "Merged", ha="center", va="center", color="white", fontsize=9.2, zorder=4)
-    ax.text(x1 + w / 2, (m_bot + m_top) / 2 - 16, f"{n_merged}  ({100*n_merged/n_term:.1f}%)", ha="center", va="center", color="white", fontsize=8.2, zorder=4)
+    ax.text(x1 + w / 2, (m_bot + m_top) / 2 + dy, "Merged", ha="center", va="center", color="white", fontsize=11.0, zorder=4)
+    ax.text(x1 + w / 2, (m_bot + m_top) / 2, f"{n_merged}", ha="center", va="center", color="white", fontsize=9.8, zorder=4)
+    ax.text(x1 + w / 2, (m_bot + m_top) / 2 - dy, f"({100*n_merged/n_term:.1f}%)", ha="center", va="center", color="white", fontsize=9.8, zorder=4)
 
     rect(ax, x1, c_bot, w, n_closed, C_CLOSED)
-    ax.text(x1 + w / 2, (c_bot + c_top) / 2 + 16, "Closed", ha="center", va="center", color="white", fontsize=9.2, zorder=4)
-    ax.text(x1 + w / 2, (c_bot + c_top) / 2 - 16, f"{n_closed}  ({100*n_closed/n_term:.1f}%)", ha="center", va="center", color="white", fontsize=8.2, zorder=4)
+    ax.text(x1 + w / 2, (c_bot + c_top) / 2 + dy, "Closed", ha="center", va="center", color="white", fontsize=11.0, zorder=4)
+    ax.text(x1 + w / 2, (c_bot + c_top) / 2, f"{n_closed}", ha="center", va="center", color="white", fontsize=9.8, zorder=4)
+    ax.text(x1 + w / 2, (c_bot + c_top) / 2 - dy, f"({100*n_closed/n_term:.1f}%)", ha="center", va="center", color="white", fontsize=9.8, zorder=4)
 
     s3_spec = [
         (C_FAST, "Low-friction fast merge", f"{fast} ({100*fast/n_merged:.1f}%)"),
@@ -205,14 +214,13 @@ def plot_sankey() -> None:
             ha="left",
             va="center",
             color="#222",
-            fontsize=8.2,
+            fontsize=9.8,
             zorder=4,
         )
 
     ax.set_xlim(-20, 1120)
     ax.set_ylim(s3[-1][0] - 30, s3[0][1] + 30)
     ax.axis("off")
-    ax.set_title("Outcome paths of agent-authored performance PRs", fontsize=11, pad=6, color="#222")
     save(fig, "rq1_sankey")
 
 
