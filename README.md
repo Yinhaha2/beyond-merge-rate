@@ -1,213 +1,208 @@
-# AI Agent 性能 Pull Request 数据集 — 仓库文件结构说明（由AI生成）
+# Beyond Merge Rate — Performance-Related Pull Requests from Coding Agents
 
-本仓库以 `finaldatabase/` 为核心，存放毕业设计研究所用的 AI Agent 性能 Pull Request 语料：主表、GitHub 附属数据与 LLM 结构化分析结果；根目录脚本与配置文件负责 PR 状态同步与 LLM 分析流程。下文按目录说明各文件含义，并总结重复出现的命名规律。
+Public dataset for *Beyond Merge Rate*, an empirical study of performance-related pull requests associated with coding agents. The unit of analysis is one GitHub pull request. This repository is the frozen corpus behind that study: the master table, GitHub activity records, topic and task-type labels, and structured LLM analyses.
+
+## Dataset at a glance
+
+Counts below were checked against `finaldatabase/pr_master/perf_prs_expanded_final.csv`, the matching Parquet file, and `finaldatabase/per_pr/`. They agree with `finaldatabase/summary/coverage_stats.json` (`pr_count`, `status_counts`, `merge_rate`).
+
+| Item | Value |
+| --- | --- |
+| Terminal pull requests | 1,183 |
+| Merged | 694 |
+| Closed without merge | 489 |
+| Merge rate | 58.7% (694 / 1,183) |
+| Open pull requests in this snapshot | 0 |
+| Coding agents | 5 |
+| Repositories | 418 |
+| PR authors (`user`) | 224 |
+| `created_at` range | 2024-12-26 to 2025-07-30 |
+
+`status` is derived in `refresh.py`: `merged` when `merged_at` is present, otherwise `closed` once `state` is no longer `open`. In this snapshot every row has GitHub `state = closed`, `merged_at` is present for exactly the 694 merged rows, and `closed_at` is present for all 1,183. The unrounded ratio is stored as `merge_rate` (`0.5866441251056635`).
+
+On 2026-09-21 the freeze removed 36 pull requests that were still open (`summary/terminal_freeze_report.json`). Those 36 plus the 1,183 retained rows are the pre-freeze count of 1,219. That earlier figure is the size before removal. It is not a second corpus in this repository. Current status counts are the master table and the top-level `status_counts` in `coverage_stats.json`. `terminal_freeze_report.json` and `status_refresh_report.json` are logs of that removal and of the refresh that preceded it.
+
+Agent composition of the terminal set:
+
+| Agent | PRs | Merged | Closed |
+| --- | ---: | ---: | ---: |
+| OpenAI_Codex | 629 | 460 | 169 |
+| Devin | 225 | 74 | 151 |
+| Copilot | 206 | 89 | 117 |
+| Cursor | 89 | 49 | 40 |
+| Claude_Code | 34 | 22 | 12 |
+| **Total** | **1,183** | **694** | **489** |
+
+## Repository layout
 
 ```
-仓库根目录/
-├── finaldatabase/                 # 数据集根目录（见下文）
-├── output_pr_analysis/             # run_pr_analysis.py 批量运行汇总（可选，本地生成）
+.
+├── finaldatabase/          # frozen corpus
+├── analysis_viz/           # reports and figures built from the distilled table
+├── humanvalidation/        # coder workbooks for the recheck sample
+├── output_pr_analysis/     # historical LLM batch ledger
+├── full_analysis_distilled.csv
 ├── refresh.py
 ├── freeze_terminal_dataset.py
+├── run_pr_analysis.py
 ├── generate_full_analysis.py
 ├── generate_rq_analysis.py
-├── run_pr_analysis.py
 ├── prompt.md
 ├── schema.json
-├── README.md
-├── .gitignore
-├── .github_token                   # 本地 GitHub Token（已 gitignore，不入库）
-├── {pr_id}_analysis.json           # 少量 few-shot 样例（根目录副本，见根目录文件表）
-└── …
+├── manual_recheck_sample.md
+└── {pr_id}_analysis.json   # six few-shot copies; canonical files are under per_pr/
 ```
 
----
+| Path | Role |
+| --- | --- |
+| `finaldatabase/pr_master/` | Full master table (CSV and Parquet) and the narrower paper CSV |
+| `finaldatabase/paper_source_copy/` | Byte-identical copy of the paper CSV |
+| `finaldatabase/auxiliary/` | Corpus-level GitHub tables stacked across PRs |
+| `finaldatabase/classification/` | BERTopic assignments, topic info, and AIDev task-type rows |
+| `finaldatabase/per_pr/{id}/` | One directory per master-table `id` |
+| `finaldatabase/summary/` | Coverage stats, freeze and refresh logs, API caches |
+| `full_analysis_distilled.csv` | 1,183 × 56 table flattened from the per-PR analysis JSON |
+| `analysis_viz/` | `FullAnalysis.md`, `RQ_Analysis.md`, figure scripts, and rendered figures |
+| `humanvalidation/` | `A.xlsx` and `B.xlsx`, the workbooks named by `manual_recheck_sample.md` |
+| `output_pr_analysis/` | July 2026 LLM batch ledger (`batch_run_report.json`, `batch_run_report.md`) |
 
-## 根目录文件
+`analysis_viz/figures/` and `analysis_viz/rq_analysis_figures/` hold the rendered plots. Files in `summary/` whose names start with `_` are sample or debug JSON. `_hits.txt` at the repository root is a path list of analysis files.
 
-| 文件 / 目录 | 含义 |
-|-------------|------|
-| `finaldatabase/` | 全部结构化 PR 数据与按 PR 拆分的附属文件 |
-| `refresh.py` | 调用 GitHub API 复核 open PR 状态；404 从数据集中删除；更新主表与 `summary/` 报告 |
-| `freeze_terminal_dataset.py` | 剔除仍为 open 的 PR，冻结终态语料（仅 merged / closed）；合并率 = merged / n |
-| `generate_full_analysis.py` | 按最终数据集聚合 `FullAnalysis.md` 与 `full_analysis_distilled.csv` |
-| `generate_rq_analysis.py` | 按最终数据集重写 `analysis_viz/RQ_Analysis.md` 并绘制 `rq_analysis_figures/` |
-| `run_pr_analysis.py` | 从 `per_pr/{id}/` 与主表组装 prompt，调用 DeepSeek，写入 `{id}_analysis.json` 等 |
-| `prompt.md` | LLM 系统提示词（固定指令块；与 `schema.json`、目标 PR 数据拼成完整 prompt） |
-| `schema.json` | 分析输出 JSON 的字段说明与模板（`run_pr_analysis.py` 校验结构时参照） |
-| `README.md` | 本说明 |
-| `.gitignore` | 忽略缓存、本地密钥等 |
-| `.github_token` | `refresh.py` 读取的 GitHub Personal Access Token（仅本地） |
-| `{pr_id}_analysis.json` | **Few-shot 样例**：与 `run_pr_analysis.py` 中 `FEWSHOT_PR_IDS` 对应的分析结果副本，便于对照 prompt / 字段格式（正式产出在 `finaldatabase/per_pr/{pr_id}/` 下） |
-| `output_pr_analysis/` | 批量分析时的累计报告：`batch_run_report.json`、`batch_run_report.md`（token、耗时、费用统计） |
+The batch ledger records analysis runs. Its own note says some ids in that log were later removed while still open. The terminal PR list is the master table.
 
-根目录当前 few-shot 样例文件（与 `per_pr/` 内同名 JSON 内容对应，路径不同）：
+## Records and identifiers
 
-- `3022909076_analysis.json`、`3074351366_analysis.json`、`3125029980_analysis.json`
-- `3145702280_analysis.json`、`3194284966_analysis.json`、`3228424652_analysis.json`
+The corpus key is the GitHub issue id: `id` on the master table and `pr_id` on auxiliary tables, analysis JSON, and `full_analysis_distilled.csv`. `number` is the pull-request number inside a single repository and repeats across repositories. `per_pr/` directory names are this issue id. All 1,183 directories match the master `id` values, with no extras and no gaps.
 
----
+`pr_master/perf_prs_expanded_final.csv` and `.parquet` are the same 1,183 × 24 table (unique `id`, no duplicate keys). Columns fall into four groups:
 
-## `finaldatabase/` 总览
+| Group | Columns |
+| --- | --- |
+| GitHub record | `id`, `number`, `title`, `body`, `user_id`, `user`, `state`, `created_at`, `closed_at`, `merged_at`, `repo_id`, `repo_url`, `html_url` |
+| Study fields | `row_1based`, `agent`, `status`, `detection_source` |
+| Task-type fields (stored as AIDev columns) | `aidev_task_type`, `aidev_task_reason`, `aidev_task_confidence` |
+| Topic and classifier fields | `Topic`, `Probability`, `Representative_document`, `llm_output` |
 
-```
-finaldatabase/
-├── README.md                       # 数据集快照摘要（条数、状态分布、最近一次 refresh）
-├── pr_master/                      # PR 主表（一行一条 PR）
-├── paper_source_copy/              # 论文用筛选表的副本
-├── auxiliary/                      # 全库聚合附属表（按 pr_id 纵向堆叠）
-├── classification/                 # 主题 / 任务类型等分类结果
-├── per_pr/                         # 按 GitHub PR id 分目录的单 PR 数据
-└── summary/                        # 覆盖率、刷新报告、GitHub 缓存与调试样例
-```
+`Topic` is an integer topic id, including `-1`. Topic names are in `classification/bertopic_topic_info.csv` (`Name`).
 
-当前规模（以 `summary/coverage_stats.json` 为准）：**终态语料**主表 **1183** 条 PR（merged 694 / closed 489，合并率 58.7%）；`per_pr/` 下 **1183** 个子目录与主表 `id` 一一对应。仍开放的 PR 已从数据集中剔除，合并率分母不再含 open。
+`POP_PULL_Requests_LLM_filtered_final.csv` is the narrower 1,183 × 14 table used as the paper source. It keeps `id`, `number`, `title`, `body`, `agent`, `user_id`, `user`, `state`, `created_at`, `closed_at`, `merged_at`, `repo_id`, `repo_url`, and `html_url`. The same bytes are stored under `pr_master/` and `paper_source_copy/`. The dropped columns are `row_1based`, `status`, `detection_source`, the three `aidev_task_*` columns, `Topic`, `Probability`, `Representative_document`, and `llm_output` (`PAPER_BASE_EXCLUDE` in `refresh.py`). On this CSV, a merged PR is one with a non-empty `merged_at`.
 
----
+### Auxiliary tables and per-PR slices
 
-### `finaldatabase/pr_master/`
+`auxiliary/` stacks the per-PR Parquet files. Where a file exists both as a stack and as a per-PR slice, the slice row totals equal the aggregate table. A PR with no reviews, comments, linked issues, or (in one case) commits has no file of that type. `run_pr_analysis.py` treats a missing per-PR file as an empty table.
 
-| 文件 | 含义 |
-|------|------|
-| `perf_prs_expanded_final.csv` | **完整主表**（CSV）。每行一条 PR，含 GitHub 元数据、Agent、BERTopic、检测来源、LLM 辅助字段等 |
-| `perf_prs_expanded_final.parquet` | 同上内容的 Parquet 版 |
-| `POP_PULL_Requests_LLM_filtered_final.csv` | **论文/下游用窄表**：在完整主表基础上去掉部分扩展列（如 `row_1based`、`status`、Topic 相关、`llm_output` 等，逻辑见 `refresh.py` 中 `PAPER_BASE_EXCLUDE`） |
+| Aggregate file | Rows | PRs represented | Join key | Per-PR file |
+| --- | ---: | ---: | --- | --- |
+| `pr_timeline.parquet` | 14,915 | 1,183 | `pr_id` | `timeline.parquet` |
+| `pr_commit_details.parquet` | 31,009 | 1,182 | `pr_id` | `commit_details.parquet` |
+| `pr_commits.parquet` | 4,116 | 1,182 | `pr_id` | `commits.parquet` |
+| `pr_comments.parquet` | 1,993 | 601 | `pr_id` | `comments.parquet` |
+| `pr_reviews.parquet` | 1,419 | 346 | `pr_id` | `reviews.parquet` |
+| `pr_review_comments_v2.parquet` | 1,539 | 203 | `pull_request_review_id` → `pr_reviews.id` | `review_comments.parquet` |
+| `related_issue.parquet` | 204 | 203 | `pr_id` | `related_issue.parquet` |
+| `issues_linked.parquet` | 196 | — | `id` (issue id) | — |
+| `repository.parquet` | 418 | — | `id` (repo id) | — |
 
-主表关键列（节选）：`id`（GitHub issue id，PR 在 Issues API 上的全局 id，全库主键；不是 Pulls API 的另一套 pull id）、`number`、`title`、`body`、`agent`、`user`、`state`、`status`（derived：merged / closed；open 已从终态快照中剔除）、`html_url`、`created_at` / `merged_at` / `closed_at`、`detection_source`、`aidev_task_*`、`Topic` / `Probability` 等。
+Every review-comment row matches a review, and those reviews cover 203 PRs, the same 203 directories that contain `review_comments.parquet`. `repository.id` is the same set as master `repo_id` (418 repositories). `issues_linked.parquet` is issue detail keyed by issue id (196 issues). The PR with no commit files is `2759847657`.
 
----
+`coverage_stats.json` matches these row counts except for the timeline. It still records 13,491 timeline rows. The current `pr_timeline.parquet` has 14,915. The difference, 1,424 events, is the backfill logged in `summary/timeline_end_actor_fill.json` (117 PRs, all in the master table). Use the Parquet file for timeline rows, and use `coverage_stats.json` for the status split.
 
-### `finaldatabase/paper_source_copy/`
+### Classification tables
 
-| 文件 | 含义 |
-|------|------|
-| `POP_PULL_Requests_LLM_filtered_final.csv` | 与 `pr_master/` 中同名文件相同；单独目录便于论文写作或外部分发时只拷贝这一份 |
+| File | Contents |
+| --- | --- |
+| `bertopic_topic_assignments.parquet` | 1,183 rows, one per master `id`, including `Topic` and `Probability` |
+| `bertopic_topic_info.csv` | 53 topics (ids `-1` through `51`). The `Count` column sums to 1,183 |
+| `aidev_pr_task_type_for_perf_prs.parquet` | 1,183 rows, one per master `id`, with `aidev_task_type`, `aidev_task_reason`, and `aidev_task_confidence` |
 
-**重复规律：** `pr_master/` 与 `paper_source_copy/` 共享同一份「筛选后主表」CSV，内容一致、路径不同。
+## LLM analysis artifacts
 
----
+`schema.json` is the output template. Top-level keys are `pr_id`, `meta`, `quantitative_metrics`, `perf_labels`, `structured_analysis`, `evidence`, and `data_coverage`. Field descriptions in that file are in Chinese. `prompt.md` is the English instruction block placed in front of the PR payload.
 
-### `finaldatabase/auxiliary/`
+Each `per_pr/{id}/` directory contains `{id}_analysis.json`. All 1,183 files have `pr_id` equal to the directory name and `meta.status` equal to the master `status` (694 merged, 489 closed). `{id}_analysis_run.json` stores model, token usage, and cost for that call (1,177 files). One directory also contains a saved workflow prompt, `{id}_workflow_prompt.txt`.
 
-全库级 **Parquet 大表**：所有 PR 的某类 GitHub 数据纵向合并，通过列 **`pr_id`**（或下表中的其它键）与主表 `id` 关联。`refresh.py` 删除 PR 时会按 `pr_id` 过滤这些表。
+Six root files are few-shot copies, byte-identical to the canonical JSON under `per_pr/`:
 
-| 文件 | 内容概要 | 关联主键 |
-|------|----------|----------|
-| `repository.parquet` | 仓库元信息 | `id`（repo id） |
-| `pr_commits.parquet` | PR 下各 commit 摘要 | `pr_id` |
-| `pr_commit_details.parquet` | commit 内逐文件改动（含 patch 等） | `pr_id` |
-| `pr_reviews.parquet` | Formal review | `pr_id` |
-| `pr_review_comments_v2.parquet` | 行内 review comment | `pull_request_review_id`（需经 `pr_reviews` 映射到 `pr_id`） |
-| `pr_comments.parquet` | PR 讨论区 comment | `pr_id` |
-| `pr_timeline.parquet` | PR 时间线事件 | `pr_id` |
-| `related_issue.parquet` | PR 关联 issue | `pr_id` |
-| `issues_linked.parquet` | issue 详情（与 related_issue 联动） | `id`（issue id） |
+`3022909076`, `3074351366`, `3125029980`, `3145702280`, `3194284966`, `3228424652`
 
-**与 `per_pr/` 的对应关系（命名规律）：**
+Those six ids are `FEWSHOT_PR_IDS` in `run_pr_analysis.py`. They are the six PRs without an `*_analysis_run.json`. The per-PR copies are the records to use.
 
-| `auxiliary/`（全库聚合） | `per_pr/{pr_id}/`（单 PR 切片） | 说明 |
-|--------------------------|----------------------------------|------|
-| `pr_commits.parquet` | `commits.parquet` | 聚合表加 `pr_` 前缀 |
-| `pr_commit_details.parquet` | `commit_details.parquet` | 同上 |
-| `pr_reviews.parquet` | `reviews.parquet` | 同上 |
-| `pr_comments.parquet` | `comments.parquet` | 同上 |
-| `pr_timeline.parquet` | `timeline.parquet` | 同上 |
-| `related_issue.parquet` | `related_issue.parquet` | 名称一致 |
-| （`pr_review_comments_v2` 仅聚合表） | `review_comments.parquet` | 单 PR 目录内文件名略不同 |
+Of the 1,177 run files, 1,169 record `deepseek-v4-pro` and 8 record `deepseek-v4-flash`. `full_analysis_distilled.csv` has one row per `pr_id`, and its `status` and `agent` values match the master table. `generate_full_analysis.py` rebuilds that CSV and `analysis_viz/FullAnalysis.md`. `generate_rq_analysis.py` rebuilds `analysis_viz/RQ_Analysis.md` and `analysis_viz/rq_analysis_figures/`.
 
-并非每条 PR 都具备全部附属文件（例如无 review 则可能没有 `reviews.parquet`）；`run_pr_analysis.py` 读取单 PR 目录时，缺失文件按空表处理。
+`manual_recheck_sample.md` draws a stratified recheck sample from this terminal set. It states that the six few-shot PRs were left out of the sampling frame (1,177 remaining), with random seed `20260925`, and that the sample has 60 merged and 60 closed PRs. The workbooks are in `humanvalidation/`.
 
----
+## Usage
 
-### `finaldatabase/classification/`
+Load the full master table and join auxiliary rows on the issue id:
 
-| 文件 | 含义 |
-|------|------|
-| `bertopic_topic_assignments.parquet` | 各 PR 的 BERTopic 主题分配 |
-| `bertopic_topic_info.csv` | 主题 id、关键词等主题表信息 |
-| `aidev_pr_task_type_for_perf_prs.parquet` | AIDev 任务类型（fix / perf / feat 等）分类结果 |
+```python
+import pandas as pd
 
-字段与主表中的 `Topic`、`aidev_task_type` 等列相互对应，可用于离线分析或校验。
+master = pd.read_parquet("finaldatabase/pr_master/perf_prs_expanded_final.parquet")
+timeline = pd.read_parquet("finaldatabase/auxiliary/pr_timeline.parquet")
+timeline = timeline.merge(master, left_on="pr_id", right_on="id", how="left")
 
----
-
-### `finaldatabase/per_pr/{pr_id}/`
-
-**目录命名：** `{pr_id}` = 主表 `id`（GitHub issue id，不是 Pulls API 的 pull id，也不是仓库内 `#number`）。
-
-每个子目录对应主表中的一条 PR，存放该 PR 的 GitHub 明细与分析产出。典型结构如下（文件是否齐全因 PR 而异）：
-
-```
-per_pr/{pr_id}/
-├── commits.parquet              # 该 PR 的 commits
-├── commit_details.parquet       # 该 PR 的文件级改动明细
-├── timeline.parquet             # 时间线（几乎每条 PR 都有）
-├── comments.parquet             # 讨论 comment（可选）
-├── reviews.parquet              # review（可选）
-├── related_issue.parquet        # 关联 issue（可选）
-├── review_comments.parquet      # 行内 review comment（可选）
-├── {pr_id}_analysis.json        # LLM 结构化分析结果（schema 见 schema.json）
-├── {pr_id}_analysis_run.json    # 单次 API 调用的 meta：model、usage、费用等
-├── {pr_id}_workflow_prompt.txt  # 可选；--save-prompt / --dry-run 时保存的完整 prompt
-└── {pr_id}_analysis.json.raw.txt # 解析失败时的原始模型输出（异常时才有）
+paper = pd.read_csv("finaldatabase/paper_source_copy/POP_PULL_Requests_LLM_filtered_final.csv")
+paper["merged"] = paper["merged_at"].notna()
 ```
 
-**重复 / 命名规律小结：**
+Review comments join through reviews:
 
-1. **目录名 = 主键：** 文件夹名与主表 `id`、`auxiliary.*.pr_id`、分析 JSON 文件名中的 `{pr_id}` 相同。
-2. **Parquet 与聚合表成对：** 单 PR 下无 `pr_` 前缀的文件，合并后即 `auxiliary/pr_*.parquet` 中对应行。
-3. **分析产物三件套：** `{pr_id}_analysis.json`（结果）+ `{pr_id}_analysis_run.json`（运行元数据）；prompt 文本可选落盘。
-4. **根目录 vs `per_pr/`：** few-shot 的 `{pr_id}_analysis.json` 在根目录留一份副本，正式数据以 `per_pr/{pr_id}/` 为准。
-
----
-
-### `finaldatabase/summary/`
-
-| 文件 | 含义 |
-|------|------|
-| `coverage_stats.json` | **当前语料总览**：PR 数量、`status_counts`（694 merged / 489 closed）、附属表统计。看合并率用这里，不要用 freeze 里过期的拆分 |
-| `terminal_freeze_report.json` | 终态冻结日志：剔除了哪些 open PR（36 条）。`remaining_status_counts` 与主表对齐；本文件不是第二套语料 |
-| `status_refresh_report.json` | **冻结前** `refresh.py` 明细（当时仍有 36 条 open）。已被 freeze 取代，当前语料 0 条 open |
-| `github_status_cache.json` | GitHub PR 状态 API 缓存（按 `pr_id`） |
-| `github_auxiliary_cache.json` | 拉取附属数据时的 GitHub 缓存 |
-| `auxiliary_incremental_report.json` | 附属表增量同步记录（按 PR 统计新增行） |
-| `_sample_schema.json` | 各附属表字段的样例行（调试 / 文档用） |
-| `_gh_timeline_sample.json` | Timeline API 样例 |
-| `_closed_timeline.json`、`_commented_timeline.json`、`_reviewed_timeline.json` | 不同事件类型的 timeline 样例 |
-| `_tl_types695.json` | Timeline 事件类型相关样例 |
-
-**命名规律：** 无下划线前缀的为**运行产物或正式统计**；以 `_` 开头的多为**抽样 / 调试 JSON**，不参与主流程读写。
-
----
-
-## 数据流关系（便于定位文件）
-
-```mermaid
-flowchart LR
-  subgraph root [根目录脚本]
-    refresh[refresh.py]
-    analysis[run_pr_analysis.py]
-  end
-  subgraph master [pr_master]
-    M[perf_prs_expanded_final.*]
-  end
-  subgraph aux [auxiliary]
-    A[pr_*.parquet]
-  end
-  subgraph single [per_pr/id]
-    P[commits / timeline / ...]
-    J[id_analysis.json]
-  end
-  refresh --> M
-  refresh --> A
-  refresh --> P
-  analysis --> M
-  analysis --> P
-  analysis --> J
-  P -.切片聚合.-> A
+```python
+reviews = pd.read_parquet("finaldatabase/auxiliary/pr_reviews.parquet")
+comments = pd.read_parquet("finaldatabase/auxiliary/pr_review_comments_v2.parquet")
+comments = comments.merge(
+    reviews[["id", "pr_id"]],
+    left_on="pull_request_review_id",
+    right_on="id",
+    how="left",
+)
 ```
 
-- **查一条 PR 的全貌：** `pr_master` 行 → `per_pr/{id}/` → 需要时 JOIN `auxiliary` 或 `classification`。
-- **全库统计 / 论文表：** `pr_master` 或 `paper_source_copy` 的 POP 筛选 CSV + `summary/coverage_stats.json` 顶层 `status_counts`（694/489）。不要用 freeze 日志里的状态拆分当第二套语料。
-- **LLM 分析：** 输入来自 `per_pr/{id}/` + 主表；输出写回同目录下 `{id}_analysis.json`。
+A single PR's files are under `finaldatabase/per_pr/{id}/`. The flattened analysis table joins to the master table on `pr_id` = `id`.
 
-更细的单次刷新数字见 [`finaldatabase/README.md`](finaldatabase/README.md) 与 [`finaldatabase/summary/coverage_stats.json`](finaldatabase/summary/coverage_stats.json) 顶层 `status_counts`。`terminal_freeze_report.json` 只说明剔除了哪些 open PR。
+## Provenance and scripts
+
+How a PR entered the corpus is `detection_source` on the full master table:
+
+| `detection_source` | PRs |
+| --- | ---: |
+| `llm_title_body_classifier` | 1,125 |
+| `aidev_pr_task_type_perf_only` | 58 |
+
+`llm_output` is populated on the 1,125 classifier rows and empty on the other 58. The 58 `aidev_pr_task_type_perf_only` rows all have `aidev_task_type = perf`. Across the full table the task-type label is broader than that inclusion rule:
+
+| `aidev_task_type` | PRs |
+| --- | ---: |
+| feat | 502 |
+| perf | 333 |
+| fix | 194 |
+| refactor | 54 |
+| ci | 29 |
+| build | 24 |
+| test | 18 |
+| docs | 15 |
+| chore | 14 |
+
+`Topic` / `Probability` and `classification/bertopic_*` are BERTopic fields stored with the corpus. `aidev_task_*` and `classification/aidev_pr_task_type_for_perf_prs.parquet` are the task-type fields stored with the corpus. Separate licenses for those upstream label sources are not in this repository.
+
+`auxiliary/repository.parquet` holds metadata for the same 418 repositories (`full_name`, `language`, `forks`, `stars`, and the upstream repository `license` string). A license value is present for 395 repositories (12 distinct values). The most frequent primary languages are TypeScript (112), Python (81), and Rust (41). Those strings describe the upstream repositories.
+
+| Script | What it does |
+| --- | --- |
+| `refresh.py` | Re-checks open PR status on the GitHub API, drops PRs that return 404, and updates the master table, auxiliary tables, and `summary/` |
+| `freeze_terminal_dataset.py` | Removes PRs whose derived `status` is `open`, leaving merged and closed rows. Merge rate is merged / n |
+| `run_pr_analysis.py` | Builds a prompt from `prompt.md`, `schema.json`, the master row, and `per_pr/{id}/`, calls the DeepSeek chat API, and writes `{id}_analysis.json` |
+| `generate_full_analysis.py` | Writes `analysis_viz/FullAnalysis.md` and `full_analysis_distilled.csv` |
+| `generate_rq_analysis.py` | Writes `analysis_viz/RQ_Analysis.md`, `rq_analysis_metrics.json`, and `rq_analysis_figures/` |
+| `analysis_viz/*.py` | Renders the corpus and paper figures from the distilled table |
+
+`refresh.py` reads a GitHub token from `GITHUB_TOKEN` or `GH_TOKEN`, or from a local token file. That local file is gitignored and is used by the refresh script. `run_pr_analysis.py` expects a DeepSeek API key in the environment. Re-running the refresh, freeze, or analysis scripts rewrites files under `finaldatabase/`. The checked-in tree is the frozen terminal snapshot described above.
+
+`summary/coverage_stats.json` was generated at 2026-09-22T04:12:41Z. `summary/terminal_freeze_report.json` records the freeze at 2026-09-21T02:51:36Z. Some `merged_at` and `closed_at` values fall after the `created_at` window, up to 2026-09-01, because status was refreshed before the freeze.
+
+## License and citation
+
+This repository has no license file. No author list, DOI, or arXiv identifier is stored here. Cite the repository until a paper citation is added:
+
+<https://github.com/Yinhaha2/beyond-merge-rate>
